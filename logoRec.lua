@@ -94,6 +94,7 @@ function crop_image(img, bbox)
     local x2 = x1 + bbox[{1,3}] - 2
     local y2 = y1 + bbox[{1,4}] - 2
     return image.crop(img,x1,y1,x2,y2)
+    --return img:sub(1,3,y1+1,y2+1,x1+1,x2+1)
 end
 
 
@@ -172,9 +173,9 @@ function generate_training_data(samples)
         --table.insert(training_data,generated_samples)
     --end  
 
-    -- scale all generated samples to 3x64x64
+    -- scale all generated samples to 3x32x32
     for i,sample in ipairs(training_data) do
-        sample.img = image.scale(sample.img,64,64)
+        sample.img = image.scale(sample.img,32,32)
     end
 
     -- return the generated training samples
@@ -183,11 +184,35 @@ end
 
 
 -- Function that constructs the neural network
---   Returns: model
---function build_network(
-    -- TODO
-    -- define the layers etc according to the architecture in the paper
---end
+-- Network architecture according to paper "Deep Learning for Logo Recognition" by Bianco, 
+-- Buzzelli, Mazzini and Schettini (2017)
+--   Returns: neural network model
+function build_network() 
+    local model = nn.Sequential()
+
+    -- convolutional layers
+    model.add(nn.SpatialConvolution(3, 32, 5, 5,1,1,2,2))
+    model.add(nn.SpatialMaxPooling(2,2,2,2))
+    model.add(nn.ReLU())
+
+    model.add(nn.SpatialConvolution(32, 32, 5, 5,1,1,2,2))
+    model.add(nn.ReLU())
+    model.add(nn.SpatialAveragePooling(2,2,2,2))
+
+    model.add(nn.SpatialConvolution(32, 64, 5, 5,1,1,2,2))
+    model.add(nn.ReLU())
+    model.add(nn.SpatialAveragePooling(2,2,2,2))
+
+    -- reshape from 3d tensor of 64x4x4 to 1d tensor 64*4*4
+    model.add(nn.View(64*4*4))
+
+    -- fully connected layers and softmax
+    model.add(nn.Linear(64*4*4,64))
+    model.add(nn.Linear(64,33))
+    model:add(nn.LogSoftMax())
+
+    return model
+end
 
 
 -- Function that saves an image as jpg file
