@@ -11,7 +11,7 @@ bbox_path = "FlickrLogos-v2/classes/masks/"
 images_path = "FlickrLogos-v2/classes/jpg/"
 
 
-# TO DO: Create a folder for genereted samples automatically
+
 def create_folder():
 	directory = 'output_python'
 	if not os.path.exists(directory):
