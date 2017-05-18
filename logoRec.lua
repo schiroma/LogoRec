@@ -6,12 +6,85 @@
 -----------------------------------------------------------------------------------
 require 'torch'
 require 'image'
+require 'nn'
+require 'optim'
+require 'nngraph'
 
 
 -- Global variables
 dataset_path = "FlickrLogos-v2/"
 bbox_path = "FlickrLogos-v2/classes/masks/"
 images_path = "FlickrLogos-v2/classes/jpg/"
+
+
+-- Define the label mappings (In the network, each class is represented by a number)
+labelMapping = {}
+labelMapping['adidas'] = 1
+labelMapping['aldi'] = 2
+labelMapping['apple'] = 3
+labelMapping['becks'] = 4
+labelMapping['bmw'] = 5
+labelMapping['carlsberg'] = 6
+labelMapping['chimay'] = 7
+labelMapping['cocacola'] = 8
+labelMapping['corona'] = 9
+labelMapping['dhl'] = 10
+labelMapping['erdinger'] = 11
+labelMapping['esso'] = 12
+labelMapping['fedex'] = 13
+labelMapping['ferrari'] = 14
+labelMapping['ford'] = 15
+labelMapping['fosters'] = 16
+labelMapping['google'] = 17
+labelMapping['guiness'] = 18
+labelMapping['heineken'] = 19
+labelMapping['HP'] = 20
+labelMapping['milka'] = 21
+labelMapping['nvidia'] = 22
+labelMapping['paulaner'] = 23
+labelMapping['pepsi'] = 24
+labelMapping['rittersport'] = 25
+labelMapping['shell'] = 26
+labelMapping['singha'] = 27
+labelMapping['starbucks'] = 28
+labelMapping['stellaartois'] = 29
+labelMapping['texaco'] = 30
+labelMapping['tsingtao'] = 31
+labelMapping['ups'] = 32
+labelMapping['no-logo'] = 33
+labelMapping[1] = 'adidas'
+labelMapping[2] = 'aldi'
+labelMapping[3] = 'apple'
+labelMapping[4] = 'becks'
+labelMapping[5] = 'bmw'
+labelMapping[6] = 'carlsberg'
+labelMapping[7] = 'chimay'
+labelMapping[8] = 'cocacola'
+labelMapping[9] = 'corona'
+labelMapping[10] = 'dhl'
+labelMapping[11] = 'erdinger'
+labelMapping[12] = 'esso'
+labelMapping[13] = 'fedex'
+labelMapping[14] = 'ferrari'
+labelMapping[15] = 'ford'
+labelMapping[16] = 'fosters'
+labelMapping[17] = 'google'
+labelMapping[18] = 'guiness'
+labelMapping[19] = 'heineken'
+labelMapping[20] = 'HP'
+labelMapping[21] = 'milka'
+labelMapping[22] = 'nvidia'
+labelMapping[23] = 'paulaner'
+labelMapping[24] = 'pepsi'
+labelMapping[25] = 'rittersport'
+labelMapping[26] = 'shell'
+labelMapping[27] = 'singha'
+labelMapping[28] = 'starbucks'
+labelMapping[29] = 'stellaartois'
+labelMapping[30] = 'texaco'
+labelMapping[31] = 'tsingtao'
+labelMapping[32] = 'ups'
+labelMapping[33] = 'no-logo'
 
 
 -- Function to read data files (containing image-filenames and contained logo)
@@ -40,8 +113,8 @@ function read_data(data_file)
             -- add new sample to the collection of samples
             table.insert(samples,sample)
         end
+        file:close()
     end
-
     return samples
 end
 
@@ -65,6 +138,7 @@ function read_boundingboxes(bbox_file)
                 header = false
             end
         end
+        file:close()
     end
     return boundingbox
 end
@@ -89,71 +163,23 @@ end
 --              bbox (tensor) - 1x4 vector (x/y of upper left corner, width and height)
 --   Returns: 3xmxn ByteTensor representing the cropped image
 function crop_image(img, bbox)
-    local x1 = bbox[{1,1}] - 1
-    local y1 = bbox[{1,2}] - 1
-    local x2 = x1 + bbox[{1,3}] - 2
-    local y2 = y1 + bbox[{1,4}] - 2
+    local x1 = bbox[{1,1}]
+    local y1 = bbox[{1,2}]
+    local x2 = x1 + bbox[{1,3}] - 1
+    local y2 = y1 + bbox[{1,4}] - 1
     return image.crop(img,x1,y1,x2,y2)
     --return img:sub(1,3,y1+1,y2+1,x1+1,x2+1)
 end
 
 
--- Function that generates annotated region proposals from an image using selective search
---   Arguments: sample (table) - a sample containing image-file, label and bbox
---   Returns: table containing image-regions and their label
---function generate_region_proposals(sample)
-    -- TODO
-    -- load image
-    -- img = ...
-    --
-    -- generate region proposals
-    -- ... = selective_search(img)
-    --
-    -- annotate each region with a label
-    -- for each region
-    --     local generated_sample = {}
-    --     local label = annotate_region(sample,region)
-    --     local region = crop_image(img,region)
-    --     generated_sample.img = region
-    --     generated_sample.label = label
-    --     table.insert(regions,generated_sample)
-    --
-    -- return regions
---end
-
-
--- Function that generates region proposals from an image using selective search
--- (too hard to implement. we should try to call an existing c++ or python implementation)
---   Arguments: img (ByteTensor) - 3xmxn matrix representing an image
---   Returns: table of bounding boxes representing the regions
---function selective_search(img)
-    -- TODO
---end
-
-
--- Function that annotates an image region with a label (the logo name or 'no logo')
--- by comparing it with the ground truth bounding box of the logo 
---   Arguments: sample (table) - a sample-table containing image-file, label and bbox
---              region (tensor) - 1x4 vector (x/y of upper left corner, width and height)
---   Returns: string representing the label of the input region
---function annotate_region(sample, region)
-    -- TODO
-    -- compute IoU (intersection over union) between logo-bbox and region
-    -- ...
-    --
-    -- label = 'nologo'
-    -- if (IoU > 0.5) then
-    --     label = sample.label
-    -- end
-    -- return label  
---end
-
-
 -- Function that generates the actual images used for training (cut out logos and
 -- region proposals from the training images)
---   Arguments: samples (table) - a table containing all the loaded training samples
+-- Note: Will eventually be removed since we do the preprocessing with python
+--   Arguments: trainset (string) - ...
 --   Returns: table containing the generated images we use for training
-function generate_training_data(samples)
+function generate_training_data(trainset)
+    samples = read_data(trainset)
+
     -- table that stores the generated training images
     local training_data = {}
 
@@ -166,52 +192,18 @@ function generate_training_data(samples)
         table.insert(training_data,generated_sample)
     end
 
-    -- generate region proposals using selective search
-    -- TODO  
-    --for i,sample in ipairs(samples) do
-        --local generated_samples = generate_region_proposals(sample)
-        --table.insert(training_data,generated_samples)
-    --end  
-
     -- scale all generated samples to 3x32x32
     for i,sample in ipairs(training_data) do
         sample.img = image.scale(sample.img,32,32)
     end
 
+    -- Save the generated images to folder
+    for i,sample in ipairs(training_data) do
+        save_image(sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
+    end
+
     -- return the generated training samples
     return training_data
-end
-
-
--- Function that constructs the neural network
--- Network architecture according to paper "Deep Learning for Logo Recognition" by Bianco, 
--- Buzzelli, Mazzini and Schettini (2017)
---   Returns: neural network model
-function build_network() 
-    local model = nn.Sequential()
-
-    -- convolutional layers
-    model.add(nn.SpatialConvolution(3, 32, 5, 5,1,1,2,2))
-    model.add(nn.SpatialMaxPooling(2,2,2,2))
-    model.add(nn.ReLU())
-
-    model.add(nn.SpatialConvolution(32, 32, 5, 5,1,1,2,2))
-    model.add(nn.ReLU())
-    model.add(nn.SpatialAveragePooling(2,2,2,2))
-
-    model.add(nn.SpatialConvolution(32, 64, 5, 5,1,1,2,2))
-    model.add(nn.ReLU())
-    model.add(nn.SpatialAveragePooling(2,2,2,2))
-
-    -- reshape from 3d tensor of 64x4x4 to 1d tensor 64*4*4
-    model.add(nn.View(64*4*4))
-
-    -- fully connected layers and softmax
-    model.add(nn.Linear(64*4*4,64))
-    model.add(nn.Linear(64,33))
-    model:add(nn.LogSoftMax())
-
-    return model
 end
 
 
@@ -221,17 +213,4 @@ end
 function save_image(filename, img)
     image.save("output/" .. filename,img)
 end
-
-------------------------------------------------------------------------------
--- Read the training images
-train_samples = read_data("trainset.txt")
-
--- Generate the training data from the training images
-training_data = generate_training_data(train_samples)
-
--- Save the generated images to folder
-for i,sample in ipairs(training_data) do
-    save_image('tr' .. tostring(i) .. '.jpg', sample.img)
-end
-
 
