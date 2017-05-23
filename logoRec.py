@@ -120,7 +120,8 @@ def generate_region_proposals(img_name,img_propery):
 
 		#TODO: Create annotate_region method
 		#label = annotate_region(sample,region)	
-		reg = img.crop((x,y,w,h))
+		#TODO fix the values x y w h as in croped_img method 
+		reg = img.crop((x,y,w,h))		
 		#TODO: Change the key name 'logo', because the generated sample region is just a croped part of the image 
 		generated_sample_reg['logo'] = reg
 		#TODO: 'no label' should be replaced with label, after the implementaiton of annotate_region
