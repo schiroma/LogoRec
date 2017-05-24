@@ -14,9 +14,9 @@ require("logoRec")
 
 
 -- Function that constructs the neural network
--- Network architecture according to paper "Deep Learning for Logo Recognition" by Bianco, 
--- Buzzelli, Mazzini and Schettini (2017)
---   Returns: neural network model
+-- Network architecture according to paper "Deep Learning for Logo Recognition" by  
+-- Bianco, Buzzelli, Mazzini and Schettini (2017)
+--   out: neural network model
 function build_network() 
     local model = nn.Sequential()
 
@@ -47,11 +47,10 @@ end
 
 -- Function that selects a batch of samples from the training set for sgd
 -- (partially based on github.com/torch/tutorials/blob/master/2_supervised/4_train.lua)
---   Arguments: dataset (tensor): nSamples x 3x32x32 DoubleTensor containing the 
---                                training data
---              labels (tensor): Vector containing the true label of each sample
---              size (int): desired batch size
---   Returns: A batch of samples of the desired size (size x 3x32x32 DoubleTensor)
+--   in: dataset (tensor): nSamples x 3x32x32 DoubleTensor containing the training data
+--       labels (tensor): Vector containing the true label of each sample
+--       size (int): desired batch size
+--   out: A batch of samples of the desired size (size x 3x32x32 DoubleTensor)
 function get_next_batch(dataset, labels, size) 
     -- get the indices of the samples of the batch
     local indices = {}
@@ -71,13 +70,11 @@ end
 
 
 -- Function that trains the network
---   Arguments: train_images_path (string): name of folder with the training images
---              learning_rate (double): the learning rate
---              nEpochs (int): number of epochs
---              batch_size (int): batch size
---   Returns: The trained model
--- TODO: -maybe early-stopping
---       -save final model to a file for reuse
+--   in: train_images_path (string): name of folder with the training images
+--       learning_rate (double): the learning rate
+--       nEpochs (int): number of epochs
+--       batch_size (int): batch size
+--   out: The trained model
 function train_model(train_images_path, learning_rate, nEpochs, batch_size)
     -- Get number of preprocessed training images
     local nb_files = 0
@@ -109,7 +106,7 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size)
     -- randomly permute the training samples (so batches contain different classes)
     shuffle = torch.randperm(nb_files)
 
-    -- train the model
+    -- build model
     local model = build_network()
     local criterion = nn.ClassNLLCriterion()
     local optimState = {learningRate = learning_rate}
@@ -125,13 +122,16 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size)
         return err, gradParameters
     end
 
+    -- run the optimization
     for i = 1, nEpochs do
         batch_idx = 1
         for j = 1, nb_files, batch_size do
-            optim.adam(feval,parameters,optimState)
-            print(err)
+            optim.adadelta(feval,parameters,optimState)
+            --optim.adam(feval,parameters,optimState)
+            --print(err)
             batch_idx = batch_idx + batch_size
         end
+        print('epoch: ' .. tostring(i) .. ', error: ' .. tostring(err))
     end
     
     -- return the trained model

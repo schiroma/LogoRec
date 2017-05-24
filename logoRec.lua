@@ -15,6 +15,8 @@ require 'nngraph'
 dataset_path = "FlickrLogos-v2/"
 bbox_path = "FlickrLogos-v2/classes/masks/"
 images_path = "FlickrLogos-v2/classes/jpg/"
+roi_path = "regions/"
+prepr_path = "preprocessed/"
 
 
 -- Define the label mappings (In the network, each class is represented by a number)
@@ -51,6 +53,7 @@ labelMapping['stellaartois'] = 29
 labelMapping['texaco'] = 30
 labelMapping['tsingtao'] = 31
 labelMapping['ups'] = 32
+labelMapping['no'] = 33
 labelMapping['no-logo'] = 33
 labelMapping[1] = 'adidas'
 labelMapping[2] = 'aldi'
@@ -88,10 +91,11 @@ labelMapping[33] = 'no-logo'
 
 
 -- Function to read data files (containing image-filenames and contained logo)
---   Arguments: data_file (string) - filename of the data file
---   Returns: table containing the samples which contain label, logo bounding box 
---            and filename of the corresponding image
-function read_data(data_file)
+--   in: data_file (string) - filename of the data file
+--       positives_only (bool) - if true, only samples with a logo are loaded
+--   out: table containing the samples which contain label, logo bounding box 
+--        and filename of the corresponding image
+function read_data(data_file, positives_only)
     -- open the specified txt-file and read it line by line
     local samples = {}
     local file = io.open(dataset_path .. data_file)
@@ -101,17 +105,21 @@ function read_data(data_file)
             local label, filename = unpack(line:split(","))
             filename = string.sub(filename,1,#filename-1)
 
-            -- from the filename, construct filename of corresponding bbox-file
-            local bbox_filename = bbox_path .. label .. "/" .. filename .. ".bboxes.txt"
+            -- skip no-logo samples if we want positive samples only
+            if ((label ~= 'no-logo') or (positives_only == false)) then
 
-            -- create sample i.e. a table containing label, filename and bbox
-            local sample = {}
-            sample.label = label
-            sample.image_file = filename
-            sample.bbox = read_boundingboxes(bbox_filename)
+                -- from the filename, construct filename of corresponding bbox-file
+                local bbox_filename = bbox_path .. label .. "/" .. filename .. ".bboxes.txt"
 
-            -- add new sample to the collection of samples
-            table.insert(samples,sample)
+                -- create sample i.e. a table containing label, filename and bbox
+                local sample = {}
+                sample.label = label
+                sample.image_file = filename
+                sample.bbox = read_boundingboxes(bbox_filename)
+
+                -- add new sample to the collection of samples
+                table.insert(samples,sample)
+            end    
         end
         file:close()
     end
@@ -120,97 +128,197 @@ end
 
 
 -- Function to read bounding box files which contain the bounding box of the logo in an image
---   Arguments: bbox_file (string) - filename of the bounding box file
---   Returns: 1x4 tensor (x/y of upper left corner, width and height)
+--   in: bbox_file (string) - filename of the bounding box file
+--   out: table of bboxes (each bbox a table with x and y of upper left corner, width and height)
 function read_boundingboxes(bbox_file)
-    local boundingbox = torch.Tensor(1,4)
+    local boundingboxes = {}
     local file = io.open(bbox_file)
     if file then
         local header = true
         for line in file:lines() do
             if not header then
                 local x, y, w, h = unpack(line:split(" "))
-                boundingbox[{1,1}] = tonumber(x)
-                boundingbox[{1,2}] = tonumber(y)
-                boundingbox[{1,3}] = tonumber(w)
-                boundingbox[{1,4}] = tonumber(h)
+                local boundingbox = {}
+                boundingbox['x'] = tonumber(x)
+                boundingbox['y'] = tonumber(y)
+                boundingbox['w'] = tonumber(w)
+                boundingbox['h'] = tonumber(h)
+                table.insert(boundingboxes,boundingbox)
+            else
+                header = false
+            end
+        end
+        file:close()
+    else
+        -- dummy bounding box for images with no logos
+        local boundingbox = {}
+        boundingbox['x'] = 1
+        boundingbox['y'] = 1
+        boundingbox['w'] = 0
+        boundingbox['h'] = 0
+        table.insert(boundingboxes,boundingbox)
+    end
+    return boundingboxes
+end
+
+
+-- Function that searches regions of interest by selective search. The selective
+-- search results for each image were precomputed with a python implementation
+-- and stored to txt-files. This function just reads these precomputed results
+-- and is thus just imitating an actual implementation of selective search
+--   in: sample (table) - a sample-table containing image-file, label and bbox
+--   out: table containing the regions (x,y,w,h-table) for the input image
+function selective_search(sample)
+    local regions = {}
+    local filename = string.sub(sample.image_file,1,#sample.image_file-4)
+    filename = roi_path .. filename .. ".txt"
+    local file = io.open(filename)
+    if file then
+        local header = true
+        for line in file:lines() do
+            if not header then
+                local x, y, w, h = unpack(line:split(" "))
+                local region = {}
+                region['x'] = tonumber(x)
+                region['y'] = tonumber(y)
+                region['w'] = tonumber(w)
+                region['h'] = tonumber(h)
+                table.insert(regions,region)
             else
                 header = false
             end
         end
         file:close()
     end
-    return boundingbox
+    return regions
 end
 
 
--- Function that cuts out the logo from an image using the bounding box
---   Arguments: sample (table) - a sample-table containing image-file, label and bbox
---   Returns: 3xmxn ByteTensor representing an image of the logo
-function extract_logo(sample)
-    -- load the image using the samples image-filename  
+-- Fuction that annotates a region with a label by comparing the region
+-- to the ground truth logo bounding box
+--   in: sample (table) - a sample-table containing image-file, label and bbox
+--       region (table) - a table containing x,y,w,h of the region to annotate
+--   out: The label of the region (either a logo-name or 'no-logo')
+function annotate_region(sample, region) 
+    local label = sample.label
+
+    -- compare region to every logo-boundingbox of the sample
+    for i,bbox in ipairs(sample.bbox) do
+        local iou = intersection_over_union(bbox, region)
+        if (iou > 0.4) then
+            return label
+        end
+    end
+    return 'no-logo'
+end
+
+
+-- Function to compute the IoU between two rectangles
+--   in: bbox (table) - a table containing x,y,w,h describing a rectangle
+--       region (table) - a table containing x,y,w,h describing a rectangle
+--   out: The IoU between the two rectangles (a value between 0 and 1)
+function intersection_over_union(bbox,region)
+    -- get coordinates of two corners of first rectangle
+    local a_x1 = bbox['x']
+    local a_y1 = bbox['y']
+    local a_x2 = a_x1 + bbox['w']
+    local a_y2 = a_y1 + bbox['h']
+
+    -- get coordinates of two corners of second rectangle
+    local b_x1 = region['x']
+    local b_y1 = region['y']
+    local b_x2 = b_x1 + region['w']
+    local b_y2 = b_y1 + region['h']
+
+    -- return 0 if no intersection at all
+    if (a_x1>b_x2 or a_x2<b_x1 or a_y1>b_y2 or a_y2<b_y1) then
+        return 0.0
+    end
+	
+    -- determine the (x, y)-coordinates of the intersection rectangle
+    local xA = math.max(a_x1, b_x1)
+    local yA = math.max(a_y1, b_y1)
+    local xB = math.min(a_x2, b_x2)
+    local yB = math.min(a_y2, b_y2)
+
+    -- compute the area of intersection rectangle
+    local interArea = (xB - xA + 1) * (yB - yA + 1)
+	
+    -- compute the area of both the prediction and ground-truth rectangles
+    local boxAArea = (a_x2 - a_x1 + 1) * (a_y2 - a_y1 + 1)
+    local boxBArea = (b_x2 - b_x1 + 1) * (b_y2 - b_y1 + 1)
+	
+    -- compute the intersection over union by taking the intersection
+    -- area and dividing it by the sum of prediction + ground-truth
+    -- areas - the interesection area (+0.001 in case of division by zero)  
+    local iou = interArea / (boxAArea + boxBArea - interArea + 0.001)
+    return iou   
+end
+
+
+-- Function that cuts out a specified area from an image
+--   in: sample (table) - a sample-table containing image-file, label and bbox
+--       region (table) - a table containing x,y,w,h of the desired region to crop
+--   out: 3xmxn ByteTensor representing the cropped region
+function crop_region(sample, region)
+    -- load the image using the sample's image-filename  
     local img_filename = images_path .. sample.label .. "/" .. sample.image_file
     local img = image.load(img_filename,3,'byte')
 
-    -- extract the logo-part from the image-matrix using the bounding box
-    local logo = crop_image(img,sample.bbox)
-    return logo
-end
-
-
--- Function that crops an image given a bounding box
---   Arguments: img (ByteTensor) - 3xmxn matrix representing an image
---              bbox (tensor) - 1x4 vector (x/y of upper left corner, width and height)
---   Returns: 3xmxn ByteTensor representing the cropped image
-function crop_image(img, bbox)
-    local x1 = bbox[{1,1}]
-    local y1 = bbox[{1,2}]
-    local x2 = x1 + bbox[{1,3}] - 1
-    local y2 = y1 + bbox[{1,4}] - 1
-    return image.crop(img,x1,y1,x2,y2)
-    --return img:sub(1,3,y1+1,y2+1,x1+1,x2+1)
+    -- extract the specified region from the image-matrix 
+    local x1 = region['x']
+    local y1 = region['y']
+    local x2 = x1 + region['w']
+    local y2 = y1 + region['h']
+    local cropped_region = image.crop(img,x1,y1,x2,y2) --img:sub(1,3,y1+1,y2+1,x1+1,x2+1)
+    return cropped_region
 end
 
 
 -- Function that generates the actual images used for training (cut out logos and
 -- region proposals from the training images)
--- Note: Will eventually be removed since we do the preprocessing with python
---   Arguments: trainset (string) - ...
---   Returns: table containing the generated images we use for training
+--   in: trainset (string) - name of the txt-file containing the image filenames 
+--                           and their logo
+--   out: table containing the generated images we use for training
 function generate_training_data(trainset)
-    samples = read_data(trainset)
+    -- load the specified dataset and only samples that contain a logo
+    samples = read_data(trainset,true)
 
     -- table that stores the generated training images
     local training_data = {}
 
-    -- extract all logos from the training images
+    -- extract all logos from the training images using gt-bounding box
     for i,sample in ipairs(samples) do
         local generated_sample = {}
-        local logo = extract_logo(sample)
-        generated_sample.img = logo
-        generated_sample.label = sample.label
-        table.insert(training_data,generated_sample)
+        for j,bbox in ipairs(sample.bbox) do
+            local logo = crop_region(sample,bbox)
+            generated_sample.img = image.scale(logo,32,32)
+            generated_sample.label = sample.label
+            table.insert(training_data,generated_sample)
+        end
     end
 
-    -- scale all generated samples to 3x32x32
-    for i,sample in ipairs(training_data) do
-        sample.img = image.scale(sample.img,32,32)
+    -- compute region proposals for each training image and annotate them
+    for i,sample in ipairs(samples) do
+        local regions = selective_search(sample)
+        for j,reg in ipairs(regions) do
+            local generated_sample = {}
+            local label = annotate_region(sample,reg)
+            local reg_img = crop_region(sample,reg)
+            generated_sample.img = image.scale(reg_img,32,32)
+            generated_sample.label = label
+            table.insert(training_data,generated_sample)         
+        end
+        print(tostring(i) .. ' / ' .. tostring(#samples))
     end
 
     -- Save the generated images to folder
     for i,sample in ipairs(training_data) do
-        save_image(sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
+        save_image(prepr_path .. sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
     end
 
     -- return the generated training samples
     return training_data
 end
 
-
--- Function that saves an image as jpg file
---   Arguments: filename - name of the file (e.g. 'test.jpg')
---              img (ByteTensor) - 3xmxn ByteTensor representing an image
-function save_image(filename, img)
-    image.save("output/" .. filename,img)
-end
 

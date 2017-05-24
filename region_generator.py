@@ -21,18 +21,16 @@ def create_folders():
 # --   
 # -- 
 def read_data(data_file):
-	samples = {} 
+	samples = {}
 	with open(dataset_path + data_file, 'r') as f:		
 		for line in f:			
 			label, filename = line.split(",")
 			if (label != "no-logo"):
-				filename = filename.rstrip()			
-				bbox = bbox_path + label + "/" + filename + ".bboxes.txt"
+				filename = filename.rstrip()
 				sample_dic = {}
 				sample_dic['label'] = label
-				sample_dic['box'] = read_boundingboxes(bbox)	
-				samples[filename] = sample_dic
-				
+				samples[filename] = sample_dic	
+			                             
 	return samples
 			  
 # -- Function that ....
@@ -51,7 +49,8 @@ def read_boundingboxes(bbox_file):
 				boundingbox['h'] = int(h.rstrip())
 			else:
 				header=False
-	return boundingbox	
+	return boundingbox
+
 # -- Function that generates annotated region proposals from an image using selective search
 # --   
 # --   
@@ -67,7 +66,7 @@ def generate_region_proposals(img_name,img_propery):
 	# create a txt file where it saves generated regions for that image
 	path_region = DIRACTORY_VAL + img_name[:-4] + ".txt"
 	file = open(path_region,"w")
-	file.write("label, x, y, width, height" + "\n")
+	file.write("x y width height" + "\n")
 	
 	for r in regions:
 		generated_sample_reg = {}
@@ -75,17 +74,19 @@ def generate_region_proposals(img_name,img_propery):
 		if r['rect'] in candidates:
 			continue
 		# excluding regions smaller than 2000 pixels
-		if r['size'] < 1000:
+		if r['size'] < 2000:
 			continue
 		# distorted rects
 		x, y, w, h = r['rect']
+		if w == 0 or h == 0:
+			continue
 		if w / h > 5 or h / w > 5:
 			continue	
 		candidates.add(r['rect'])
-		label = annotate_region(img_propery,r['rect'])	
+		#label = annotate_region(img_propery,r['rect'])	
 		#save regions of a picture on a txt file
 		x, y, w, h = r['rect']
-		txt = label + ", " + str(x) + ", " + str(y) + ", " + str(w) + ", " + str(h)  + "\n"
+		txt = str(x) + " " + str(y) + " " + str(w) + " " + str(h)  + "\n"
 		file.write(txt)
 	file.close() 
 	
@@ -98,31 +99,47 @@ def annotate_region(prop, region):
 	box = prop['box']
 	iou  = IOU(box,region)
 	# annotate
-	if (iou < 0.5):
+	if (iou < 0.4):
 		label = 'no-logo'
-
 	return label  
 
 
 def IOU(box,region):
-
+	# get corner coordinates of bounding box
+	xA1 = box['x']
+	yA1 = box['y']
+	xA2 = xA1+box['w']
+	yA2 = yA1+box['h']
+	
+	# get corner coordinates of region
 	xB1, yB1, wB, hB = region
+	xB2 = xB1 + wB
+	yB2 = yB1 + hB
+	
+	# return 0 if no intersection at all
+	if (xA1>xB2 or xA2<xB1 or yA1>yB2 or yA2<yB1):
+		return 0.0
+	
 	# determine the (x, y)-coordinates of the intersection rectangle
-	xA = max(box['x'], xB1)
-	yA = max(box['y'], yB1)
-	xB = min(box['w'], wB)
-	yB = min(box['h'], hB)
+	xA = max(xA1, xB1)
+	yA = max(yA1, yB1)
+	xB = min(xA2, xB2)
+	yB = min(yA2, yB2)
+	
 	# compute the area of intersection rectangle
 	interArea = (xB - xA + 1) * (yB - yA + 1)
+	
 	# compute the area of both the prediction and ground-truth
 	# rectangles
-	boxAArea = (box['w'] - box['x'] + 1) * (box['h'] - box['y'] + 1)
-	boxBArea = (wB - xB1 + 1) * (hB - yB1 + 1)
+	boxAArea = (xA2 - xA1 + 1) * (yA2 - yA1 + 1)
+	boxBArea = (xB2 - xB1 + 1) * (yB2 - yB1 + 1)
+	
 	# compute the intersection over union by taking the intersection
 	# area and dividing it by the sum of prediction + ground-truth
 	# areas - the interesection area. +0.001 in case of division by zero.  
 	iou = interArea / float(boxAArea + boxBArea - interArea + 0.001)
 	return iou
+
 
 	
 
@@ -130,8 +147,11 @@ def IOU(box,region):
 # -- samples  
 # -- set : {1 for trainset.txt , 2 for trainvalset.txt }
 def generate_training_data(samples):
+	i=0
 	for img_name,img_property in samples.items(): 
 		generate_region_proposals(img_name,img_property)
+		i+=1
+		print(i)
 	
 
 #-----------------------------------------------------------------

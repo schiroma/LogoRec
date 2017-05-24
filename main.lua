@@ -10,13 +10,17 @@ require("training")
 require("testing")
 require("logoRec")
 
--- Generate the training images
--- Note: We will do this generation with python. hence this function call will 
--- be removed later (I leave it for now so this script runs without error)
+-- Generate the training images 
+-- Note: Can be commented out if they were generated before
 generate_training_data("trainset.txt")
+--generate_training_data("trainvalset.txt")
 
 -- Train the model
-model = train_model('output', 0.001, 20, 32)
+-- Note: Can be commented out if it was trained before and saved to file
+model = train_model('preprocessed', 0.01, 14, 64)
+torch.save('trained_model',model)
 
 -- Evaluate the model
-evaluate_model(model, 'testset-logosonly.txt')
+--model = torch.load('trained_model')
+--evaluate_model(model, 'testset-logosonly.txt')
+evaluate_model(model, 'valset.txt')
