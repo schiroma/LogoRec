@@ -17,10 +17,11 @@ generate_training_data("trainset.txt")
 
 -- Train the model
 -- Note: Can be commented out if it was trained before and saved to file
-model = train_model('preprocessed', 0.01, 14, 64)
+model = train_model('preprocessed', 0.0005, 14, 128, false)
 torch.save('trained_model',model)
 
 -- Evaluate the model
 --model = torch.load('trained_model')
 --evaluate_model(model, 'testset-logosonly.txt')
 evaluate_model(model, 'valset.txt')
+

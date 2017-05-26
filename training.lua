@@ -11,6 +11,9 @@ require 'image'
 require 'nn'
 require 'optim'
 require("logoRec")
+require("testing")
+--require 'cutorch'
+--require 'cunn'
 
 
 -- Function that constructs the neural network
@@ -70,12 +73,13 @@ end
 
 
 -- Function that trains the network
---   in: train_images_path (string): name of folder with the training images
---       learning_rate (double): the learning rate
---       nEpochs (int): number of epochs
---       batch_size (int): batch size
+--   in: train_images_path (string) - name of folder with the training images
+--       learning_rate (double) - the learning rate
+--       nEpochs (int) - number of epochs
+--       batch_size (int) - batch size 
+--       validation (bool) - if true, model is tested on validation during training
 --   out: The trained model
-function train_model(train_images_path, learning_rate, nEpochs, batch_size)
+function train_model(train_images_path, learning_rate, nEpochs, batch_size, validation)
     -- Get number of preprocessed training images
     local nb_files = 0
     for file in paths.files(train_images_path) do
@@ -112,6 +116,12 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size)
     local optimState = {learningRate = learning_rate}
     local parameters, gradParameters = model:getParameters()
 
+    -- cuda
+    --model = model:cuda()
+    --local criterion = nn.ClassNLLCriterion():cuda()
+    --train_data = train_data:cuda()
+    --train_labels = train_labels:cuda()
+
     feval = function(x)
         local batch_data, batch_labels = get_next_batch(train_data, train_labels, batch_size)
         model:zeroGradParameters()
@@ -123,15 +133,32 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size)
     end
 
     -- run the optimization
+    local val_errs = {}
     for i = 1, nEpochs do
         batch_idx = 1
         for j = 1, nb_files, batch_size do
-            optim.adadelta(feval,parameters,optimState)
-            --optim.adam(feval,parameters,optimState)
+            --optim.adadelta(feval,parameters,optimState)
+            optim.adam(feval,parameters,optimState)
             --print(err)
             batch_idx = batch_idx + batch_size
         end
-        print('epoch: ' .. tostring(i) .. ', error: ' .. tostring(err))
+        print('epoch: ' .. tostring(i) .. ', err: ' .. tostring(err))
+
+        -- test current model with validation set after every third epoch
+        if validation then
+            if i % 3 == 0 then
+                val_err = 1.0 - evaluate_model(model, 'valset-small.txt')
+                table.insert(val_errs,val_err)
+                str = ''
+                for j,val in ipairs(val_errs) do
+                    str = str .. tostring(val) .. ', '
+                end
+                print('epoch: ' .. tostring(i) .. ', valerr: ' .. tostring(val_err))
+                --fd = io.open('val-errors.txt','w')
+                --fd:write(str)
+                --fd:close()
+            end
+        end
     end
     
     -- return the trained model

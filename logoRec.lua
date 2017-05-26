@@ -314,7 +314,7 @@ function generate_training_data(trainset)
 
     -- Save the generated images to folder
     for i,sample in ipairs(training_data) do
-        save_image(prepr_path .. sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
+        image.save(prepr_path .. sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
     end
 
     -- return the generated training samples

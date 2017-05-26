@@ -10,8 +10,9 @@ require 'torch'
 require 'image'
 require 'nn'
 require 'optim'
+--require 'cutorch'
+--require 'cunn'
 
-require("training")
 require("logoRec")
 
 
@@ -87,6 +88,7 @@ function evaluate_model(model, testset)
     --test_samples = read_data(testset)
     test_labels = torch.DoubleTensor(#test_samples)
     pred = torch.DoubleTensor(#test_samples)
+    conf = torch.DoubleTensor(#test_samples)
 
     -- classify each test image
     for i,sample in ipairs(test_samples) do
@@ -101,6 +103,7 @@ function evaluate_model(model, testset)
         -- classify the region proposals and store prediction of current test image
         for j,reg in ipairs(regions) do
             -- classify region
+            --reg = reg:cuda()
             local probabilities = model:forward(reg)
             probabilities = probabilities:exp()
             conf,prediction = probabilities:max(1)
@@ -133,10 +136,6 @@ function evaluate_model(model, testset)
             --print(probabilities)
         end
         print(sample.label .. ' - ' .. labelMapping[pred[i]])
-
-        --if i>3 then
-        --    break
-        --end
     end
 
     -- evaluate classifications
@@ -147,16 +146,17 @@ function evaluate_model(model, testset)
     -- TODO precision, recall
 
     -- print results (sample-id, label, predicted label) and achieved accuracy
-    for i = 1,test_labels:size(1) do
-        local line = 'sample id: ' .. tostring(i) .. ', ' 
-        line = line .. 'label: ' .. labelMapping[test_labels[i]] .. ', ' 
-        line = line .. 'classified as: ' .. labelMapping[pred[i]] .. ' '
+    --for i = 1,test_labels:size(1) do
+    --    local line = 'sample id: ' .. tostring(i) .. ', ' 
+    --    line = line .. 'label: ' .. labelMapping[test_labels[i]] .. ', ' 
+    --    line = line .. 'classified as: ' .. labelMapping[pred[i]] .. ' '
     --    line = line .. tostring(pred[i][1]) .. ' '
     --    for j = 1,probabilities:size(2) do
     --        line = line .. string.format("%.3f", probabilities[{i,j}]) .. ' '
     --    end
-        print(line)
-    end
+    --    print(line)
+    --end
     print('Accuracy: ' .. accuracy)
+    return accuracy
 end
 

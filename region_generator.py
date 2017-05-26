@@ -25,11 +25,11 @@ def read_data(data_file):
 	with open(dataset_path + data_file, 'r') as f:		
 		for line in f:			
 			label, filename = line.split(",")
-			if (label != "no-logo"):
-				filename = filename.rstrip()
-				sample_dic = {}
-				sample_dic['label'] = label
-				samples[filename] = sample_dic	
+			#if (label != "no-logo"):
+			filename = filename.rstrip()
+			sample_dic = {}
+			sample_dic['label'] = label
+			samples[filename] = sample_dic	
 			                             
 	return samples
 			  
@@ -160,8 +160,8 @@ def generate_training_data(samples):
 #-- Create output_python/ directory (folder)
 create_folders() 
 
-#-- Read the trainvalset images
-training_data = read_data("trainvalset.txt")
+#-- Read the dataset images
+training_data = read_data("testset.txt")
 generate_training_data(training_data)
 
 
