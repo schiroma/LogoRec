@@ -147,7 +147,7 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size, vali
         -- test current model with validation set after every third epoch
         if validation then
             if i % 3 == 0 then
-                val_err = 1.0 - evaluate_model(model, 'valset-small.txt')
+                val_err = 1.0 - evaluate_model(model, 'valset-small.txt', false)
                 table.insert(val_errs,val_err)
                 str = ''
                 for j,val in ipairs(val_errs) do

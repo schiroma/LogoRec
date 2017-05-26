@@ -38,12 +38,17 @@ end
 
 -- Function that computes the region proposals, crops them and returns them in a table
 --   in: sample (table) - a sample-table containing image-file, label and bbox
+--       distorted (bool) - if true, distoreted (blurred) versions of the images are used
 --   out: a table of images (the cropped regions from selective search)
-function get_regions(sample)
+function get_regions(sample, distorted)
     local cropped_regions = {}
     local regions = selective_search(sample)
+    local img = load_image(sample)
+    if distorted then
+        img = blur_image(img)
+    end
     for j,reg in ipairs(regions) do
-        local cropped_region = crop_region(sample,reg)
+        local cropped_region = crop_region(img,reg)
         cropped_region = image.scale(cropped_region,32,32)  
         table.insert(cropped_regions,cropped_region:double())       
     end
@@ -76,16 +81,18 @@ end
 --   in: model - the trained cnn used for classification
 --       testset (string) - name of the txt-file containing the image filenames 
 --                          and corresponding logos of the test samples
-function evaluate_model(model, testset)
+--       distorted (bool) - if true, distoreted (blurred) images are used for testing
+--   out: the accuracy of the predictions
+function evaluate_model(model, testset, distorted)
     -- load the test samples
-    tmp = read_data(testset)
-    test_samples = {}
-    for i,sample in ipairs(tmp) do
-        if sample.label ~= 'no-logo' and sample.label ~= 'no' then
-            table.insert(test_samples,sample)
-        end
-    end
-    --test_samples = read_data(testset)
+    --tmp = read_data(testset)
+    --test_samples = {}
+    --for i,sample in ipairs(tmp) do
+    --    if sample.label ~= 'no-logo' and sample.label ~= 'no' then
+    --        table.insert(test_samples,sample)
+    --    end
+    --end
+    test_samples = read_data(testset)
     test_labels = torch.DoubleTensor(#test_samples)
     pred = torch.DoubleTensor(#test_samples)
     conf = torch.DoubleTensor(#test_samples)
@@ -93,7 +100,7 @@ function evaluate_model(model, testset)
     -- classify each test image
     for i,sample in ipairs(test_samples) do
         -- get region proposals from selective search
-        local regions = get_regions(sample)
+        local regions = get_regions(sample,distorted)
 
         -- store true label of current test image
         test_labels[i] = labelMapping[sample.label]

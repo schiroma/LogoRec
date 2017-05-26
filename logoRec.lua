@@ -16,7 +16,6 @@ dataset_path = "FlickrLogos-v2/"
 bbox_path = "FlickrLogos-v2/classes/masks/"
 images_path = "FlickrLogos-v2/classes/jpg/"
 roi_path = "regions/"
-prepr_path = "preprocessed/"
 
 
 -- Define the label mappings (In the network, each class is represented by a number)
@@ -256,15 +255,35 @@ function intersection_over_union(bbox,region)
 end
 
 
--- Function that cuts out a specified area from an image
+-- Function to blur an image with a gaussian convolution
+--   in: img (tensor) - a bytetensor representing the image to blur
+--   out: the blurred image (by 20x20 kernel) as bytetensor
+function blur_image(img)
+    local kernel = image.gaussian(20,1,0.25,true)
+    img = img:double()/255
+    img = image.convolve(img,kernel,'same')
+    img = img*255
+    img = img:byte()
+    return img
+end
+
+
+-- Function to load an image from a sample-table
 --   in: sample (table) - a sample-table containing image-file, label and bbox
---       region (table) - a table containing x,y,w,h of the desired region to crop
---   out: 3xmxn ByteTensor representing the cropped region
-function crop_region(sample, region)
+--   out: a bytetensor representing the loaded image
+function load_image(sample)
     -- load the image using the sample's image-filename  
     local img_filename = images_path .. sample.label .. "/" .. sample.image_file
     local img = image.load(img_filename,3,'byte')
+    return img
+end
 
+
+-- Function that cuts out a specified area from an image
+--   in: img (tensor) - a bytetensor representing the image to blur
+--       region (table) - a table containing x,y,w,h of the desired region to crop
+--   out: 3xmxn ByteTensor representing the cropped region
+function crop_region(img, region)
     -- extract the specified region from the image-matrix 
     local x1 = region['x']
     local y1 = region['y']
@@ -277,10 +296,12 @@ end
 
 -- Function that generates the actual images used for training (cut out logos and
 -- region proposals from the training images)
---   in: trainset (string) - name of the txt-file containing the image filenames 
+--   in: output_folder (string) - name of the folder to store the data
+--       trainset (string) - name of the txt-file containing the image filenames 
 --                           and their logo
+--       augmentation (bool) - if true, we add blurred images to the dataset
 --   out: table containing the generated images we use for training
-function generate_training_data(trainset)
+function generate_training_data(output_folder, trainset, augmentation)
     -- load the specified dataset and only samples that contain a logo
     samples = read_data(trainset,true)
 
@@ -289,32 +310,54 @@ function generate_training_data(trainset)
 
     -- extract all logos from the training images using gt-bounding box
     for i,sample in ipairs(samples) do
-        local generated_sample = {}
+        local img = load_image(sample)
+        if augmentation then
+            img_blurred = blur_image(img)
+        end
         for j,bbox in ipairs(sample.bbox) do
-            local logo = crop_region(sample,bbox)
+            local generated_sample = {}
+            local logo = crop_region(img,bbox)
             generated_sample.img = image.scale(logo,32,32)
             generated_sample.label = sample.label
             table.insert(training_data,generated_sample)
+            if (augmentation) then
+                local generated_sample_blurred = {}
+                logo_blurred = crop_region(img_blurred,bbox)
+                generated_sample_blurred.img = image.scale(logo_blurred,32,32)
+                generated_sample_blurred.label = sample.label
+                table.insert(training_data,generated_sample_blurred)
+            end
         end
     end
 
     -- compute region proposals for each training image and annotate them
     for i,sample in ipairs(samples) do
         local regions = selective_search(sample)
+        local img = load_image(sample)
+        if augmentation then
+            img_blurred = blur_image(img)
+        end
         for j,reg in ipairs(regions) do
             local generated_sample = {}
             local label = annotate_region(sample,reg)
-            local reg_img = crop_region(sample,reg)
+            local reg_img = crop_region(img,reg)
             generated_sample.img = image.scale(reg_img,32,32)
             generated_sample.label = label
-            table.insert(training_data,generated_sample)         
+            table.insert(training_data,generated_sample)  
+            if (augmentation) then
+                local generated_sample_blurred = {}
+                reg_img_blurred = crop_region(img_blurred,reg)
+                generated_sample_blurred.img = image.scale(reg_img_blurred,32,32)
+                generated_sample_blurred.label = label
+                table.insert(training_data,generated_sample_blurred)
+            end       
         end
-        print(tostring(i) .. ' / ' .. tostring(#samples))
+        print('progress: ' .. tostring(i) .. ' / ' .. tostring(#samples))
     end
 
     -- Save the generated images to folder
     for i,sample in ipairs(training_data) do
-        image.save(prepr_path .. sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
+        image.save(output_folder .. '/' .. sample.label .. '_' .. tostring(i) .. '.jpg', sample.img)
     end
 
     -- return the generated training samples
