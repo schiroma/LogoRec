@@ -6,14 +6,8 @@
 --
 -- Authors: Tofunmi Ajayi, Ping Lu, Fisnik Mengjiqi, Roman Schindler
 -----------------------------------------------------------------------------------
-require 'torch'
-require 'image'
-require 'nn'
-require 'optim'
 require("logoRec")
 require("testing")
---require 'cutorch'
---require 'cunn'
 
 
 -- Function that constructs the neural network
@@ -69,6 +63,7 @@ function get_next_batch(dataset, labels, size)
         batch_labels[i] = labels[indices[i]]
     end
     return batch_data, batch_labels
+    --return batch_data:cuda(), batch_labels:cuda()
 end
 
 
@@ -116,7 +111,7 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size, vali
     local optimState = {learningRate = learning_rate}
     local parameters, gradParameters = model:getParameters()
 
-    -- cuda
+    -- convert to cuda when using gpu
     --model = model:cuda()
     --local criterion = nn.ClassNLLCriterion():cuda()
     --train_data = train_data:cuda()
@@ -147,7 +142,7 @@ function train_model(train_images_path, learning_rate, nEpochs, batch_size, vali
         -- test current model with validation set after every third epoch
         if validation then
             if i % 3 == 0 then
-                val_err = 1.0 - evaluate_model(model, 'valset-small.txt', false)
+                val_err = 1.0 - evaluate_model(model, 'valset.txt', false, false, 1)
                 table.insert(val_errs,val_err)
                 str = ''
                 for j,val in ipairs(val_errs) do

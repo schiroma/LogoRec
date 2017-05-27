@@ -8,7 +8,9 @@ require 'torch'
 require 'image'
 require 'nn'
 require 'optim'
-require 'nngraph'
+require 'gnuplot'
+--require 'cutorch'
+--require 'cunn'
 
 
 -- Global variables
@@ -17,6 +19,8 @@ bbox_path = "FlickrLogos-v2/classes/masks/"
 images_path = "FlickrLogos-v2/classes/jpg/"
 roi_path = "regions/"
 
+-- The different classes
+classes ={1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33}
 
 -- Define the label mappings (In the network, each class is represented by a number)
 labelMapping = {}
@@ -289,7 +293,7 @@ function crop_region(img, region)
     local y1 = region['y']
     local x2 = x1 + region['w']
     local y2 = y1 + region['h']
-    local cropped_region = image.crop(img,x1,y1,x2,y2) --img:sub(1,3,y1+1,y2+1,x1+1,x2+1)
+    local cropped_region = image.crop(img,x1,y1,x2,y2) 
     return cropped_region
 end
 
